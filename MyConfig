@@ -1,0 +1,13 @@
+[DEFAULT]
+
+[SQL]
+username = Filler
+password = 5gs.1-
+port = 3306
+database = Trading
+table_name = Gold
+timeColName = Timestamp
+
+[CSV]
+file_path = ./Gold_Tick_01012020_13052025.csv
+chunk_size = 20000
