@@ -12,11 +12,11 @@ StartDate = 02.01.2020 00:00:00
 EndDate = 03.01.2020 00:00:00
 
 [CSV]
-file_path = ./Gold_Tick_01012020_13052025.csv
-chunk_size = 20000
+FilePath = ./Gold_Tick_01012020_13052025.csv
+ChunkSize = 20000
 
 [Candle]
-timeGranularity = 1min
+TimeGranularity = 1min
 
 [Perona-Malik]
 Iterations = 100
@@ -25,3 +25,4 @@ Kappa = 2
 
 [Autocorrelation]
 MaxLag = 100
+Lag = 27

@@ -96,7 +96,7 @@ def perona_malik_smoothing(time, data, config):
 
     # Get and print the absolute paths
     project_root = os.path.dirname(os.path.abspath(__file__))
-    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['tableName'])
+    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
     os.makedirs(plots_dir, exist_ok=True)
     plt.savefig(os.path.join(plots_dir, 'Perona_Malik_smoothing.png'))
     plt.close()

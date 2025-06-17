@@ -3,7 +3,10 @@ import configparser
 from sqlalchemy import create_engine, text
 import pandas as pd
 from typing import Tuple
-import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import os
 import FeatureSpace
 import TimeSeriesAnalysis
 import TimeSeriesManipulation
@@ -101,6 +104,19 @@ smoothed = TimeSeriesManipulation.perona_malik_smoothing(candles[config['SQL']['
 
 get_log_returns = TimeSeriesManipulation.getLogReturns(smoothed.tolist())
 calculate_autocorr = TimeSeriesAnalysis.calculate_autocorrelation(get_log_returns, config)
+
+plt.figure()
+plt.xlabel('Time')
+plt.ylabel('log Returns')
+plt.title('Lag visualization of log Returns')
+plt.plot(candles[config['SQL']['TimeColName']][1:], get_log_returns, label='Log Returns', color='blue')
+plt.plot(candles[config['SQL']['TimeColName']][1:-int(config['Autocorrelation']['Lag'])], get_log_returns[int(config['Autocorrelation']['Lag']):], label='Log Returns with lag', color='orange')
+
+project_root = os.path.dirname(os.path.abspath(__file__))
+plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+os.makedirs(plots_dir, exist_ok=True)
+plt.savefig(os.path.join(plots_dir, 'LogReturns.png'))
+plt.close()
 
 #differences = TimeSeriesManipulation.getDifferences(df['Volume'].tolist())
 #bollinger_bands_middle, bollinger_bands_high, bollinger_bands_low = TimeSeriesAnalysis.calculate_bollinger_bands(df['Close'], window=20, num_std=2)
