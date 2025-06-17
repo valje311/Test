@@ -4,6 +4,8 @@ from typing import Union, List
 import matplotlib.pyplot as plt
 from statsmodels.tsa.stattools import grangercausalitytests
 from typing import Tuple
+import os
+from tqdm import tqdm
 
 def granger_causality_test(data: pd.DataFrame, max_lag: int = 5, verbose: bool = True) -> None:
     """
@@ -37,8 +39,7 @@ def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], c
     
     Args:
         data: Time series data as pandas Series, list, or numpy array
-        max_lags: Maximum number of lags to calculate
-        plot: Whether to plot the autocorrelation function
+        config: Configuration dictionary containing MaxLag and other settings
     
     Returns:
         numpy array containing autocorrelation values for each lag
@@ -56,15 +57,19 @@ def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], c
     variance = np.var(series)
     
     # Initialize autocorrelation array
-    autocorr = np.zeros(int(config['Autocorrelation']['MaxLag']) + 1)
+    max_lag = int(config['Autocorrelation']['MaxLag'])
+    autocorr = np.zeros(max_lag + 1)
     n = len(series)
     
-    # Calculate autocorrelation for each lag
-    for lag in range(int(config['Autocorrelation']['MaxLag']) + 1):
-        # Calculate covariance
-        cov = np.sum((series[lag:] * series[:(n-lag)])) / (n - lag)
-        autocorr[lag] = cov / variance
+    # Calculate autocorrelation for each lag with progress bar
+    with tqdm(total=max_lag + 1, desc="Calculating autocorrelation") as pbar:
+        for lag in range(max_lag + 1):
+            # Calculate covariance
+            cov = np.sum((series[lag:] * series[:(n-lag)])) / (n - lag)
+            autocorr[lag] = cov / variance
+            pbar.update(1)
     
+    # Create and save plot
     plt.figure(figsize=(12, 6))
     plt.bar(range(len(autocorr)), autocorr)
     plt.axhline(y=0, color='r', linestyle='-')
@@ -73,7 +78,11 @@ def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], c
     plt.xlabel('Lag')
     plt.ylabel('Autocorrelation')
     plt.title('Autocorrelation Function')
-    plt.savefig('Autocorrelation.png')
+    
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['tableName'])
+    os.makedirs(plots_dir, exist_ok=True)
+    plt.savefig(os.path.join(plots_dir, 'Autocorrelation.png'))
     plt.close()
     
     return autocorr

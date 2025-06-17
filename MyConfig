@@ -17,6 +17,7 @@ chunk_size = 20000
 timeGranularity = 1min
 
 [Perona-Malik]
+Iterations = 100
 TimeStep = 0.1
 Kappa = 2
 

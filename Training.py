@@ -93,9 +93,11 @@ def get_data_boundaries(config: configparser.ConfigParser) -> Tuple[pd.DataFrame
 
 startDateTime = datetime.strptime('02.01.2020 00:00:00', '%d.%m.%Y %H:%M:%S')
 endDateTime = datetime.strptime('03.01.2020 00:00:00', '%d.%m.%Y %H:%M:%S')
+print("Loading data from database...")
 df = load_tick_data(startDateTime, endDateTime, config)
-candles = FeatureSpace.createCandleDataFrame(df)
-smoothed = TimeSeriesManipulation.perona_malik_smoothing(candles[config['SQL']['TimeColName']], candles[config['SQL']['DataColName']].tolist(), num_iterations=1000)
+print("Data loaded successfully.")
+candles = FeatureSpace.createCandleDataFrame(df, config)
+smoothed = TimeSeriesManipulation.perona_malik_smoothing(candles[config['SQL']['TimeColName']], candles[config['SQL']['DataColName']].tolist(), config)
 
 get_log_returns = TimeSeriesManipulation.getLogReturns(smoothed.tolist())
 calculate_autocorr = TimeSeriesAnalysis.calculate_autocorrelation(get_log_returns, config)
