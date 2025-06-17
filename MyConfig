@@ -5,9 +5,20 @@ username = Filler
 password = 5gs.1-
 port = 3306
 database = Trading
-table_name = Gold
+tableName = Gold
 timeColName = Timestamp
+DataColName = Close
 
 [CSV]
 file_path = ./Gold_Tick_01012020_13052025.csv
 chunk_size = 20000
+
+[Candle]
+timeGranularity = 1min
+
+[Perona-Malik]
+TimeStep = 0.1
+Kappa = 2
+
+[Autocorrelation]
+MaxLag = 100

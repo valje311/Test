@@ -31,9 +31,7 @@ def granger_causality_test(data: pd.DataFrame, max_lag: int = 5, verbose: bool =
                     print(f"Lag {lag}: F-statistic = {res[0]['ssr_ftest'][0]}, p-value = {res[0]['ssr_ftest'][1]}")
 
 
-def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], 
-                            max_lags: int = 40, 
-                            plot: bool = True) -> np.ndarray:
+def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], config) -> np.ndarray:
     """
     Calculate and optionally plot the autocorrelation function for a time series.
     
@@ -58,25 +56,25 @@ def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray],
     variance = np.var(series)
     
     # Initialize autocorrelation array
-    autocorr = np.zeros(max_lags + 1)
+    autocorr = np.zeros(int(config['Autocorrelation']['MaxLag']) + 1)
     n = len(series)
     
     # Calculate autocorrelation for each lag
-    for lag in range(max_lags + 1):
+    for lag in range(int(config['Autocorrelation']['MaxLag']) + 1):
         # Calculate covariance
         cov = np.sum((series[lag:] * series[:(n-lag)])) / (n - lag)
         autocorr[lag] = cov / variance
     
-    if plot:
-        plt.figure(figsize=(12, 6))
-        plt.bar(range(len(autocorr)), autocorr)
-        plt.axhline(y=0, color='r', linestyle='-')
-        plt.axhline(y=1.96/np.sqrt(n), color='r', linestyle='--')
-        plt.axhline(y=-1.96/np.sqrt(n), color='r', linestyle='--')
-        plt.xlabel('Lag')
-        plt.ylabel('Autocorrelation')
-        plt.title('Autocorrelation Function')
-        plt.show()
+    plt.figure(figsize=(12, 6))
+    plt.bar(range(len(autocorr)), autocorr)
+    plt.axhline(y=0, color='r', linestyle='-')
+    plt.axhline(y=1.96/np.sqrt(n), color='r', linestyle='--')
+    plt.axhline(y=-1.96/np.sqrt(n), color='r', linestyle='--')
+    plt.xlabel('Lag')
+    plt.ylabel('Autocorrelation')
+    plt.title('Autocorrelation Function')
+    plt.savefig('Autocorrelation.png')
+    plt.close()
     
     return autocorr
 

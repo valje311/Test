@@ -4,26 +4,43 @@ import configparser
 config = configparser.ConfigParser()
 config.read('MyConfig')
 
-def createCandleDataFrame(x_df, timeWindow):
+def createCandleDataFrame(df) -> pd.DataFrame:
     """
-    Convert tick data to OHLCV (Open, High, Low, Close, Volume) candlesticks
+    Creates a candlestick DataFrame from raw trading data.
     
     Args:
-        df: DataFrame with columns ['Timestamp', 'Close', 'Volume']
-        timeWindow: Candlestick timeframe in minutes
+        df (DataFrame): Raw trading data with timestamp and price columns
+        
+    Returns:
+        DataFrame: OHLCV candlestick data with minute-based candles
     """
-    # Convert timestamp to datetime
-    x_df[config['SQL']['timeColName']] = pd.to_datetime(x_df[config['SQL']['timeColName']], unit='ms')
+    # Make a copy to avoid modifying the original
+    df = df.copy()
     
-    # Resample data to specified timeframe
-    resampled = x_df.set_index(config['SQL']['timeColName']).resample(f'{timeWindow}T')
+    timestamp_col = config['SQL']['timeColName']
     
-    candles = pd.DataFrame({
-        'Open': resampled['Close'].first(),
-        'High': resampled['Close'].max(),
-        'Low': resampled['Close'].min(),
-        'Close': resampled['Close'].last(),
-        'Volume': resampled['Volume'].sum()
-    }).dropna()
+    # Convert millisecond timestamps to datetime
+    df[timestamp_col] = pd.to_datetime(df[timestamp_col], unit='ms')
+    
+    # Sort by timestamp
+    df = df.sort_values(by=timestamp_col)
+    
+    # Create minute-based timestamp for grouping
+    df['group_timestamp'] = df[timestamp_col].dt.floor(config['Candle']['timeGranularity'])
+    
+    # Group and calculate OHLCV
+    candles = df.groupby('group_timestamp').agg({
+        'Close': ['first', 'max', 'min', 'last'],
+        'Volume': 'sum'
+    })
+    
+    # Flatten column names
+    candles.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+    candles = candles.reset_index()
+    candles = candles.rename(columns={'group_timestamp': timestamp_col})
+    
+    # Ensure timestamps are timezone-naive
+    if candles[timestamp_col].dt.tz is not None:
+        candles[timestamp_col] = candles[timestamp_col].dt.tz_localize(None)
     
     return candles
