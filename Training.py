@@ -24,7 +24,7 @@ def load_tick_data(start_date: datetime, end_date: datetime, config: configparse
         pandas DataFrame with tick data
     """
     # Create database connection
-    CONNECTION_STRING = f"mysql+mysqlconnector://{config['SQL']['username']}:{config['SQL']['password']}@localhost:{config['SQL']['port']}/{config['SQL']['database']}"
+    CONNECTION_STRING = f"mysql+mysqlconnector://{config['SQL']['Username']}:{config['SQL']['Password']}@localhost:{config['SQL']['Port']}/{config['SQL']['Database']}"
     engine = create_engine(CONNECTION_STRING)
     
     # Prepare query
@@ -32,7 +32,7 @@ def load_tick_data(start_date: datetime, end_date: datetime, config: configparse
     columns = ", ".join(features)
     query = text(f"""
         SELECT {columns}
-        FROM {config['SQL']['tableName']}
+        FROM {config['SQL']['TableName']}
         WHERE Timestamp BETWEEN :start AND :end
         ORDER BY Timestamp
     """)
@@ -60,22 +60,22 @@ def get_data_boundaries(config: configparser.ConfigParser) -> Tuple[pd.DataFrame
     Returns:
         Tuple of (first_entry, last_entry) as pandas DataFrames
     """
-    CONNECTION_STRING = f"mysql+mysqlconnector://{config['SQL']['username']}:{config['SQL']['password']}@localhost:{config['SQL']['port']}/{config['SQL']['database']}"
+    CONNECTION_STRING = f"mysql+mysqlconnector://{config['SQL']['Username']}:{config['SQL']['Password']}@localhost:{config['SQL']['Port']}/{config['SQL']['Database']}"
     engine = create_engine(CONNECTION_STRING)
     
-    features = [config['SQL']['timeColName'], config['SQL']['DataColName'], 'Volume']
+    features = [config['SQL']['TimeColName'], config['SQL']['DataColName'], 'Volume']
     columns = ", ".join(features)
     
     first_query = text(f"""
         SELECT {columns}
-        FROM {config['SQL']['tableName']}
+        FROM {config['SQL']['TableName']}
         ORDER BY Timestamp ASC
         LIMIT 1
     """)
     
     last_query = text(f"""
         SELECT {columns}
-        FROM {config['SQL']['tableName']}
+        FROM {config['SQL']['TableName']}
         ORDER BY Timestamp DESC
         LIMIT 1
     """)
@@ -91,8 +91,8 @@ def get_data_boundaries(config: configparser.ConfigParser) -> Tuple[pd.DataFrame
     return first_entry, last_entry
 
 
-startDateTime = datetime.strptime('02.01.2020 00:00:00', '%d.%m.%Y %H:%M:%S')
-endDateTime = datetime.strptime('03.01.2020 00:00:00', '%d.%m.%Y %H:%M:%S')
+startDateTime = datetime.strptime(config['SQL']['StartDate'], '%d.%m.%Y %H:%M:%S')
+endDateTime = datetime.strptime(config['SQL']['EndDate'], '%d.%m.%Y %H:%M:%S')
 print("Loading data from database...")
 df = load_tick_data(startDateTime, endDateTime, config)
 print("Data loaded successfully.")

@@ -1,13 +1,15 @@
 [DEFAULT]
 
 [SQL]
-username = Filler
-password = 5gs.1-
-port = 3306
-database = Trading
-tableName = Gold
-timeColName = Timestamp
+UserName = Filler
+Password = 5gs.1-
+Port = 3306
+Database = Trading
+TableName = Gold
+TimeColName = Timestamp
 DataColName = Close
+StartDate = 02.01.2020 00:00:00
+EndDate = 03.01.2020 00:00:00
 
 [CSV]
 file_path = ./Gold_Tick_01012020_13052025.csv
