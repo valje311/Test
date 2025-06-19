@@ -6,6 +6,240 @@ from statsmodels.tsa.stattools import grangercausalitytests
 from typing import Tuple
 import os
 from tqdm import tqdm
+import configparser
+
+def calculate_mutual_information(series: np.ndarray, delay: int, config: configparser.ConfigParser) -> float:
+    """
+    Calculates the mutual information between a time series and its delayed version.
+
+    Args:
+        series (np.ndarray): The input time series.
+        delay (int): The time delay (tau).
+        NumBins (int): The number of bins for histogram estimation.
+
+    Returns:
+        float: The mutual information value.
+    """
+    if delay >= len(series):
+        return 0.0
+
+    # Create delayed copies
+    series_original = series[:-delay]
+    series_delayed = series[delay:]
+
+    # Joint histogram
+    hist_joint, _, _ = np.histogram2d(series_original, series_delayed, bins=int(config['Mutual Information']['NumBins']), density=True)
+    
+    # Marginal histograms
+    hist_original, _ = np.histogram(series_original, bins=int(config['Mutual Information']['NumBins']), density=True)
+    hist_delayed, _ = np.histogram(series_delayed, bins=int(config['Mutual Information']['NumBins']), density=True)
+
+    # Convert histograms to probabilities (normalize to sum to 1)
+    # Add a small epsilon to avoid log(0)
+    p_joint = hist_joint / np.sum(hist_joint) + np.finfo(float).eps
+    p_original = hist_original / np.sum(hist_original) + np.finfo(float).eps
+    p_delayed = hist_delayed / np.sum(hist_delayed) + np.finfo(float).eps
+
+    # Calculate mutual information
+    # MI(X;Y) = sum(p(x,y) * log(p(x,y) / (p(x)*p(y))))
+    
+    # Outer product to get p(x) * p(y) for all pairs
+    p_outer = np.outer(p_original, p_delayed) + np.finfo(float).eps
+    
+    mutual_info = np.sum(p_joint * np.log(p_joint / p_outer))
+
+    return mutual_info
+
+def find_optimal_time_delay(data: Union[pd.Series, List[float], np.ndarray], config: configparser.ConfigParser) -> int:
+    """
+    Finds the optimal time delay (tau) using the first minimum of the mutual information.
+
+    Args:
+        data (Union[pd.Series, List[float], np.ndarray]): The time series data.
+        config (configparser.ConfigParser): Configuration object with 'MaxLag' setting.
+
+    Returns:
+        int: The optimal time delay (tau).
+    """
+    if isinstance(data, pd.Series):
+        series = data.values
+    else:
+        series = np.array(data)
+
+    max_lag = int(config['Mutual Information']['MaxLag'])
+    
+    mutual_informations = []
+    lags = range(1, max_lag + 1)
+
+    print("Calculating Mutual Information for various lags...")
+    with tqdm(total=len(lags), desc="Mutual Information") as pbar:
+        for lag in lags:
+            mi = calculate_mutual_information(series, lag, config)
+            mutual_informations.append(mi)
+            pbar.update(1)
+
+    # Plot Mutual Information
+    plt.figure(figsize=(12, 6))
+    plt.plot(lags, mutual_informations, marker='o', linestyle='-')
+    plt.xlabel('Time Lag (τ)')
+    plt.ylabel('Mutual Information (MI)')
+    plt.title('Mutual Information vs. Time Lag')
+    plt.grid(True)
+
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+    os.makedirs(plots_dir, exist_ok=True)
+    plt.savefig(os.path.join(plots_dir, 'Mutual_Information.png'))
+    plt.close()
+
+    # Find the first minimum
+    optimal_tau = 1
+    # Ensure there are at least 3 points to check for a minimum (prev, current, next)
+    if len(mutual_informations) > 2: 
+        for i in range(1, len(mutual_informations) - 1):
+            if (mutual_informations[i] < mutual_informations[i-1] and 
+                mutual_informations[i] < mutual_informations[i+1]):
+                optimal_tau = lags[i]
+                break # Found the first minimum
+        # If no minimum is found, often the first minimum is chosen when it starts to level off or simply the first point (lag 1) if MI continuously decreases.
+        # However, the strict definition implies a dip. If it just keeps decreasing, a common heuristic is to pick the first lag where MI drops significantly or
+        # the lag where MI is significantly below its initial value. For simplicity and adhering to "first minimum", we'll stick to the strict dip.
+        # If no strict minimum is found, it means MI is likely monotonically decreasing or has complex behavior.
+        # In such cases, taking a point where the curve flattens out or where the decay is significant might be an alternative.
+        # For now, if no minimum is found, it will default to 1 as initialized.
+    
+    if optimal_tau == 1 and len(mutual_informations) > 1 and mutual_informations[0] < mutual_informations[1]:
+        # This handles the case where the first value is already a minimum (i.e., MI starts increasing immediately)
+        # This is rare but technically possible.
+        pass
+    elif optimal_tau == 1 and len(mutual_informations) > 1:
+        # If optimal_tau is still 1, and no clear minimum was found, and MI is not decreasing,
+        # it might imply the optimal_tau is indeed 1 if the very first drop is significant.
+        # This part is more heuristic. The standard is the first local minimum.
+        pass
+
+    print(f"Optimal time delay (tau) found using Mutual Information: {optimal_tau}")
+    return optimal_tau
+
+
+def calculate_false_nearest_neighbors(data: np.ndarray, tau: int, config: configparser.ConfigParser) -> Tuple[np.ndarray, int]:
+    """
+    Calculates the percentage of false nearest neighbors (FNN) for various embedding dimensions.
+    
+    Args:
+        data (np.ndarray): The input time series.
+        tau (int): The time delay.
+        MaxDim (int): The maximum embedding dimension to test.
+        RTol (float): Tolerance for distance increase (ratio test).
+        ATol (float): Tolerance for distance increase (absolute test).
+        
+    Returns:
+        Tuple[np.ndarray, int]: A tuple containing:
+            - fnn_percentages (np.ndarray): Array of FNN percentages for each dimension.
+            - optimal_embedding_dim (int): The estimated optimal embedding dimension.
+    """
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    n_points = len(data)
+    fnn_percentages = np.zeros(int(config['False Nearest Neighbour']['MaxDim']))
+    
+    print("Calculating False Nearest Neighbors...")
+    with tqdm(total=int(config['False Nearest Neighbour']['MaxDim']), desc="False Nearest Neighbors") as pbar:
+        for m in range(1, int(config['False Nearest Neighbour']['MaxDim']) + 1):
+            if (m - 1) * tau >= n_points:
+                fnn_percentages[m-1:] = 100.0 # Cannot form embedding for higher dimensions
+                break
+
+            # Create embedded vectors
+            # Each row is an m-dimensional vector: [x(t), x(t+tau), ..., x(t+(m-1)tau)]
+            embedded_series = sliding_window_view(data, window_shape=m * tau)[::tau]
+            
+            # Adjust n_points for the embedded series
+            n_embedded = len(embedded_series)
+            
+            false_neighbors_count = 0
+            
+            for i in range(n_embedded):
+                current_point = embedded_series[i]
+                
+                # Find nearest neighbor in m-dimension
+                min_dist_sq_m = np.inf
+                nearest_neighbor_idx_m = -1
+                
+                for j in range(n_embedded):
+                    if i == j:
+                        continue
+                    
+                    dist_sq = np.sum((current_point - embedded_series[j])**2)
+                    if dist_sq < min_dist_sq_m:
+                        min_dist_sq_m = dist_sq
+                        nearest_neighbor_idx_m = j
+                
+                if nearest_neighbor_idx_m == -1: # No neighbor found (e.g., n_embedded = 1)
+                    continue
+
+                # Check if we can form (m+1)-dimensional points
+                if (i + m * tau >= n_points) or \
+                   (nearest_neighbor_idx_m + m * tau >= n_points):
+                   # Cannot check in m+1 dimension, treat as not an FNN for now, or skip
+                   continue
+
+                # Get the (m+1)-th coordinate for current point and its neighbor
+                x_m_plus_1 = data[i + m * tau]
+                nn_m_plus_1 = data[nearest_neighbor_idx_m + m * tau]
+                
+                # Calculate distance in (m+1)-dimension
+                dist_sq_m_plus_1 = min_dist_sq_m + (x_m_plus_1 - nn_m_plus_1)**2
+                
+                # FNN criteria
+                # RTol test: Check if the relative increase in distance is large
+                if np.sqrt(dist_sq_m_plus_1) / np.sqrt(min_dist_sq_m) > float(config['False Nearest Neighbour']['RTol']):
+                    false_neighbors_count += 1
+                # ATol test: Check if the absolute increase in distance is large relative to the attractor size
+                # This part needs an estimate of the attractor's diameter.
+                # A common heuristic is to use the standard deviation of the time series as a proxy for attractor size.
+                # For more rigorous implementation, compute the actual diameter of the embedded attractor.
+                # Here, we'll use a simpler approximation if RTol fails.
+                elif np.abs(x_m_plus_1 - nn_m_plus_1) / np.std(data) > float(config['False Nearest Neighbour']['ATol']):
+                    false_neighbors_count += 1
+
+            fnn_percentages[m-1] = (false_neighbors_count / n_embedded) * 100 if n_embedded > 0 else 0
+            pbar.update(1)
+
+    # Plot FNN percentages
+    plt.figure(figsize=(12, 6))
+    plt.plot(range(1, int(config['False Nearest Neighbour']['MaxDim']) + 1), fnn_percentages, marker='o', linestyle='-')
+    plt.xlabel('Embedding Dimension (m)')
+    plt.ylabel('Percentage of False Nearest Neighbors (%)')
+    plt.title('False Nearest Neighbors Method')
+    plt.grid(True)
+    
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+    os.makedirs(plots_dir, exist_ok=True)
+    plt.savefig(os.path.join(plots_dir, 'False_Nearest_Neighbors.png'))
+    plt.close()
+
+    # Determine optimal embedding dimension (first minimum or where percentage drops below a threshold)
+    optimal_embedding_dim = 1
+    # Find the first dimension where FNN percentage is below a small threshold (e.g., 5-10%)
+    # Or, where the percentage significantly drops and levels off.
+    # A simple approach is the first dimension where FNN is minimal.
+    if len(fnn_percentages) > 0:
+        min_fnn_percentage = np.min(fnn_percentages)
+        # Find the first occurrence of this minimum
+        optimal_embedding_dim = np.where(fnn_percentages == min_fnn_percentage)[0][0] + 1
+        
+        # Heuristic: If min_fnn_percentage is still high, or if it stabilizes after an initial drop
+        # You might want to define a threshold (e.g., 1% or 5%)
+        threshold = 5.0 # Example threshold
+        for i, perc in enumerate(fnn_percentages):
+            if perc <= threshold:
+                optimal_embedding_dim = i + 1
+                break
+        
+    print(f"Optimal embedding dimension (m) found using FNN: {optimal_embedding_dim}")
+    return fnn_percentages, optimal_embedding_dim
 
 def granger_causality_test(data: pd.DataFrame, max_lag: int = 5, verbose: bool = True) -> None:
     """
@@ -134,3 +368,46 @@ def calculate_bollinger_bands(data: Union[pd.Series, List[float], np.ndarray],
         plt.show()
     
     return middle_band, upper_band, lower_band
+
+def TakenEmbedding(myReturns: Union[pd.Series, List[float], np.ndarray], plots_dir, config: configparser.ConfigParser) -> None:
+    optimal_tau = 0
+    optimal_embedding_dim = 0 
+    if config['Takens Embedding']['UseUserDefinedParameters'] == 'True':
+        optimal_tau = int(config['Takens Embedding']['TimeDelay'])
+        optimal_embedding_dim = int(config['Takens Embedding']['EmbeddingDim'])
+    else:
+        optimal_tau = find_optimal_time_delay(myReturns, config)
+        fnn_percentages, optimal_embedding_dim = calculate_false_nearest_neighbors(myReturns, optimal_tau, config)
+    num_points_for_embedding = len(myReturns) - (optimal_embedding_dim - 1) * optimal_tau
+    if num_points_for_embedding <= 0:
+        print(f"Warning: Not enough data points ({len(myReturns)}) to form embedded vectors with tau={optimal_tau} and m={optimal_embedding_dim}.")
+        print("Please consider a longer time series or smaller tau/m values in the config file.")
+        delay_vectors = np.array([]) # Empty array if cannot embed
+    else:
+        delay_vectors = np.zeros((num_points_for_embedding, optimal_embedding_dim))
+        for i in range(num_points_for_embedding):
+            for j in range(optimal_embedding_dim):
+                delay_vectors[i, j] = myReturns[i + j * optimal_tau]
+
+        if optimal_embedding_dim >= 2:
+            plt.figure(figsize=(10, 8))
+            plt.plot(delay_vectors[:, 0], delay_vectors[:, 1], 'b-', linewidth=0.5, alpha=0.7)
+            plt.xlabel(f"Returns at t")
+            plt.ylabel(f"Returns at t + {optimal_tau}")
+            plt.title(f"2D Phase Space Reconstruction (m={optimal_embedding_dim}, τ={optimal_tau})")
+            plt.grid(True)
+            plt.savefig(os.path.join(plots_dir, 'Phase_Space_2D_Reconstruction.png'))
+            plt.close()
+            print(f"Saved 2D phase space reconstruction plot to {os.path.join(plots_dir, 'Phase_Space_2D_Reconstruction.png')}")
+
+        if optimal_embedding_dim >= 3:
+            fig = plt.figure(figsize=(10, 8))
+            ax = fig.add_subplot(111, projection='3d')
+            ax.plot(delay_vectors[:, 0], delay_vectors[:, 1], delay_vectors[:, 2], 'b-', linewidth=0.5, alpha=0.7)
+            ax.set_xlabel(f"Returns at t")
+            ax.set_ylabel(f"Returns at t + {optimal_tau}")
+            ax.set_zlabel(f"Returns at t + {2 * optimal_tau}")
+            ax.set_title(f"3D Phase Space Reconstruction (m={optimal_embedding_dim}, τ={optimal_tau})")
+            plt.savefig(os.path.join(plots_dir, 'Phase_Space_3D_Reconstruction.png'))
+            plt.close()
+            print(f"Saved 3D phase space reconstruction plot to {os.path.join(plots_dir, 'Phase_Space_3D_Reconstruction.png')}")

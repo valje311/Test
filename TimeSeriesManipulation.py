@@ -41,6 +41,24 @@ def getDifferences(dx):
     
     return differences.tolist()
 
+def getSimpleReturns(dx):
+    """
+    Calculate the simple returns of a given list of prices.
+
+    Parameters:
+    dx (list): A list of prices.
+
+    Returns:
+    list: A list of simple returns.
+    """
+    if len(dx) < 2:
+        return []
+
+    # Calculate simple returns
+    simple_returns = np.array(dx[1:]) / np.array(dx[:-1]) - 1
+    
+    return simple_returns.tolist()
+
 import numpy as np
 
 def perona_malik_smoothing(time, data, config):

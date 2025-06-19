@@ -12,7 +12,20 @@ import TimeSeriesAnalysis
 import TimeSeriesManipulation
 
 config = configparser.ConfigParser()
-config.read('MyConfig')
+config.read('MyConfig.ini')
+
+def xor(a: bool, b: bool) -> bool:
+    """
+    Perform exclusive OR operation on two boolean values.
+    
+    Args:
+        a: First boolean value
+        b: Second boolean value
+    
+    Returns:
+        True if exactly one of a or b is True, otherwise False
+    """
+    return (a and not b) or (not a and b)
 
 def load_tick_data(start_date: datetime, end_date: datetime, config: configparser.ConfigParser) -> pd.DataFrame:
     """
@@ -94,28 +107,53 @@ def get_data_boundaries(config: configparser.ConfigParser) -> Tuple[pd.DataFrame
     return first_entry, last_entry
 
 
+assert xor(config['DEFAULT']['UseLogReturns'] =='True', config['DEFAULT']['UseSimpleReturns'] == 'True'), "Exactly one of UseLogReturns or UseSimpleReturns must be True."
 startDateTime = datetime.strptime(config['SQL']['StartDate'], '%d.%m.%Y %H:%M:%S')
 endDateTime = datetime.strptime(config['SQL']['EndDate'], '%d.%m.%Y %H:%M:%S')
 print("Loading data from database...")
 df = load_tick_data(startDateTime, endDateTime, config)
 print("Data loaded successfully.")
-candles = FeatureSpace.createCandleDataFrame(df, config)
-smoothed = TimeSeriesManipulation.perona_malik_smoothing(candles[config['SQL']['TimeColName']], candles[config['SQL']['DataColName']].tolist(), config)
+project_root = os.path.dirname(os.path.abspath(__file__))
+plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+os.makedirs(plots_dir, exist_ok=True)
+if config['DEFAULT']['SmoothTicks'] == 'True':
+    if config['DEFAULT']['SmoothTicksMethod'] == 'Perona-Malik':
+        print("Smoothing data using Perona-Malik method...")
+        df[config['SQL']['DataColName']] = TimeSeriesManipulation.perona_malik_smoothing(df[config['SQL']['TimeColName']], df[config['SQL']['DataColName']].tolist(), config)
 
-get_log_returns = TimeSeriesManipulation.getLogReturns(smoothed.tolist())
-calculate_autocorr = TimeSeriesAnalysis.calculate_autocorrelation(get_log_returns, config)
+candles = FeatureSpace.createCandleDataFrame(df, config)
+if config['DEFAULT']['SmoothCandles'] == 'True':
+    if config['DEFAULT']['SmoothCandlesMethod'] == 'Perona-Malik':
+        print("Smoothing candles using Perona-Malik method...")
+        candles[config['SQL']['DataColName']] = TimeSeriesManipulation.perona_malik_smoothing(candles[config['SQL']['TimeColName']], candles[config['SQL']['DataColName']].tolist(), config)
+
+myReturns=None
+if config['DEFAULT']['UseLogReturns'] == 'True':
+    myReturns = TimeSeriesManipulation.getLogReturns(candles[config['SQL']['DataColName']].tolist())
+    if config['DEFAULT']['SmoothLogReturns'] == 'True':
+        if config['DEFAULT']['SmoothLogReturnsMethod'] == 'Perona-Malik':
+            print("Smoothing log returns using Perona-Malik method...")
+            myReturns = TimeSeriesManipulation.perona_malik_smoothing(candles[config['SQL']['TimeColName']], myReturns, config)
+elif config['DEFAULT']['UseSimpleReturns'] == 'True':
+    myReturns = TimeSeriesManipulation.getSimpleReturns(candles[config['SQL']['DataColName']].tolist())
+    if config['DEFAULT']['SmoothSimpleReturns'] == 'True':
+        if config['DEFAULT']['SmoothSimpleReturnsMethod'] == 'Perona-Malik':
+            print("Smoothing simple returns using Perona-Malik method...")
+            myReturns = TimeSeriesManipulation.perona_malik_smoothing(candles[config['SQL']['TimeColName']], myReturns, config)
+
+calculate_autocorr = TimeSeriesAnalysis.calculate_autocorrelation(myReturns, config)
+TimeSeriesAnalysis.TakenEmbedding(myReturns, plots_dir, config)
 
 plt.figure()
 plt.xlabel('Time')
 plt.ylabel('log Returns')
 plt.title('Lag visualization of log Returns')
-plt.plot(candles[config['SQL']['TimeColName']][1:], get_log_returns, label='Log Returns', color='blue')
-plt.plot(candles[config['SQL']['TimeColName']][1:-int(config['Autocorrelation']['Lag'])], get_log_returns[int(config['Autocorrelation']['Lag']):], label='Log Returns with lag', color='orange')
+plt.plot(candles[config['SQL']['TimeColName']][1:], myReturns, label='Log Returns', color='blue')
+plt.plot(candles[config['SQL']['TimeColName']][1:-int(config['Autocorrelation']['Lag'])], myReturns[int(config['Autocorrelation']['Lag']):], label='Log Returns with lag', color='orange')
 
-project_root = os.path.dirname(os.path.abspath(__file__))
-plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
-os.makedirs(plots_dir, exist_ok=True)
 plt.savefig(os.path.join(plots_dir, 'LogReturns.png'))
+
+
 plt.close()
 
 #differences = TimeSeriesManipulation.getDifferences(df['Volume'].tolist())
