@@ -8,6 +8,20 @@ import os
 from tqdm import tqdm
 import configparser
 
+def friedman_diaconis_bins(data: np.ndarray) -> int:
+    """Estimate the optimal number of histogram bins using the Friedman-Diaconis rule."""
+    data = np.asarray(data)
+    n = len(data)
+    if n < 2:
+        return 1
+    q75, q25 = np.percentile(data, [75, 25])
+    iqr = q75 - q25
+    bin_width = 2 * iqr / np.cbrt(n)
+    if bin_width == 0:
+        return 1
+    num_bins = int(np.ceil((data.max() - data.min()) / bin_width))
+    return max(1, num_bins)
+
 def calculate_mutual_information(series: np.ndarray, delay: int, config: configparser.ConfigParser) -> float:
     """
     Calculates the mutual information between a time series and its delayed version.
@@ -28,11 +42,38 @@ def calculate_mutual_information(series: np.ndarray, delay: int, config: configp
     series_delayed = series[delay:]
 
     # Joint histogram
-    hist_joint, _, _ = np.histogram2d(series_original, series_delayed, bins=int(config['Mutual Information']['NumBins']), density=True)
+    binning = (int(config['Mutual Information']['NumBinsX']), int(config['Mutual Information']['NumBinsY']))
+    if config['Mutual Information']['UseFriedmanDiaconis'] == 'True':
+        # Use Friedman-Diaconis rule to determine the number of bins
+        num_bins_x = friedman_diaconis_bins(series_original)
+        num_bins_y = friedman_diaconis_bins(series_delayed)
+        binning = (num_bins_x, num_bins_y)
+    hist_joint, _, _ = np.histogram2d(series_original, series_delayed, bins=binning, density=True)
     
+    # Plot and save the joint histogram as a heatmap
+    plt.figure(figsize=(8, 6))
+    plt.imshow(
+        hist_joint.T,  # transpose for correct orientation
+        origin='lower',
+        aspect='auto',
+        # extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
+        cmap='viridis'
+    )
+    plt.colorbar(label='Density')
+    plt.xlabel('Original Series')
+    plt.ylabel('Delayed Series')
+    plt.title('Joint Histogram (2D Density)')
+
+    # Save to the Plots directory
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+    os.makedirs(plots_dir, exist_ok=True)
+    plt.savefig(os.path.join(plots_dir, 'Joint_Histogram' + str(delay) + '.png'))
+    plt.close()
+
     # Marginal histograms
-    hist_original, _ = np.histogram(series_original, bins=int(config['Mutual Information']['NumBins']), density=True)
-    hist_delayed, _ = np.histogram(series_delayed, bins=int(config['Mutual Information']['NumBins']), density=True)
+    hist_original, _ = np.histogram(series_original, bins=binning[0], density=True)
+    hist_delayed, _ = np.histogram(series_delayed, bins=binning[1], density=True)
 
     # Convert histograms to probabilities (normalize to sum to 1)
     # Add a small epsilon to avoid log(0)
