@@ -22,7 +22,7 @@ def friedman_diaconis_bins(data: np.ndarray) -> int:
     num_bins = int(np.ceil((data.max() - data.min()) / bin_width))
     return max(1, num_bins)
 
-def calculate_mutual_information(series: np.ndarray, delay: int, config: configparser.ConfigParser) -> float:
+def calculate_mutual_information(series: np.ndarray, delay: int, config: configparser.ConfigParser, plots_dir=None) -> float:
     """
     Calculates the mutual information between a time series and its delayed version.
 
@@ -65,9 +65,10 @@ def calculate_mutual_information(series: np.ndarray, delay: int, config: configp
     plt.title('Joint Histogram (2D Density)')
 
     # Save to the Plots directory
-    project_root = os.path.dirname(os.path.abspath(__file__))
-    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
-    os.makedirs(plots_dir, exist_ok=True)
+    if plots_dir is None:
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+        os.makedirs(plots_dir, exist_ok=True)
     plt.savefig(os.path.join(plots_dir, 'Joint_Histogram' + str(delay) + '.png'))
     plt.close()
 
@@ -91,7 +92,7 @@ def calculate_mutual_information(series: np.ndarray, delay: int, config: configp
 
     return mutual_info
 
-def find_optimal_time_delay(data: Union[pd.Series, List[float], np.ndarray], config: configparser.ConfigParser) -> int:
+def find_optimal_time_delay(data: Union[pd.Series, List[float], np.ndarray], config: configparser.ConfigParser, plots_dir=None) -> int:
     """
     Finds the optimal time delay (tau) using the first minimum of the mutual information.
 
@@ -115,7 +116,7 @@ def find_optimal_time_delay(data: Union[pd.Series, List[float], np.ndarray], con
     print("Calculating Mutual Information for various lags...")
     with tqdm(total=len(lags), desc="Mutual Information") as pbar:
         for lag in lags:
-            mi = calculate_mutual_information(series, lag, config)
+            mi = calculate_mutual_information(series, lag, config, plots_dir)
             mutual_informations.append(mi)
             pbar.update(1)
 
@@ -128,8 +129,9 @@ def find_optimal_time_delay(data: Union[pd.Series, List[float], np.ndarray], con
     plt.grid(True)
 
     project_root = os.path.dirname(os.path.abspath(__file__))
-    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
-    os.makedirs(plots_dir, exist_ok=True)
+    if plots_dir is None:
+        plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+        os.makedirs(plots_dir, exist_ok=True)
     plt.savefig(os.path.join(plots_dir, 'Mutual_Information.png'))
     plt.close()
 
@@ -163,7 +165,7 @@ def find_optimal_time_delay(data: Union[pd.Series, List[float], np.ndarray], con
     return optimal_tau
 
 
-def calculate_false_nearest_neighbors(data: np.ndarray, tau: int, config: configparser.ConfigParser) -> Tuple[np.ndarray, int]:
+def calculate_false_nearest_neighbors(data: np.ndarray, tau: int, config: configparser.ConfigParser, plots_dir=None) -> Tuple[np.ndarray, int]:
     """
     Calculates the percentage of false nearest neighbors (FNN) for various embedding dimensions.
     
@@ -256,8 +258,9 @@ def calculate_false_nearest_neighbors(data: np.ndarray, tau: int, config: config
     plt.grid(True)
     
     project_root = os.path.dirname(os.path.abspath(__file__))
-    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
-    os.makedirs(plots_dir, exist_ok=True)
+    if plots_dir is None:
+        plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+        os.makedirs(plots_dir, exist_ok=True)
     plt.savefig(os.path.join(plots_dir, 'False_Nearest_Neighbors.png'))
     plt.close()
 
@@ -308,7 +311,7 @@ def granger_causality_test(data: pd.DataFrame, max_lag: int = 5, verbose: bool =
                     print(f"Lag {lag}: F-statistic = {res[0]['ssr_ftest'][0]}, p-value = {res[0]['ssr_ftest'][1]}")
 
 
-def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], config) -> np.ndarray:
+def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], config, plots_dir=None) -> np.ndarray:
     """
     Calculate and optionally plot the autocorrelation function for a time series.
     
@@ -355,8 +358,9 @@ def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], c
     plt.title('Autocorrelation Function')
     
     project_root = os.path.dirname(os.path.abspath(__file__))
-    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['tableName'])
-    os.makedirs(plots_dir, exist_ok=True)
+    if plots_dir is None:
+        plots_dir = os.path.join(project_root, 'Plots', config['SQL']['tableName'])
+        os.makedirs(plots_dir, exist_ok=True)
     plt.savefig(os.path.join(plots_dir, 'Autocorrelation.png'))
     plt.close()
     
@@ -417,8 +421,8 @@ def TakenEmbedding(myReturns: Union[pd.Series, List[float], np.ndarray], plots_d
         optimal_tau = int(config['Takens Embedding']['TimeDelay'])
         optimal_embedding_dim = int(config['Takens Embedding']['EmbeddingDim'])
     else:
-        optimal_tau = find_optimal_time_delay(myReturns, config)
-        fnn_percentages, optimal_embedding_dim = calculate_false_nearest_neighbors(myReturns, optimal_tau, config)
+        optimal_tau = find_optimal_time_delay(myReturns, config, plots_dir)
+        fnn_percentages, optimal_embedding_dim = calculate_false_nearest_neighbors(myReturns, optimal_tau, config, plots_dir)
     num_points_for_embedding = len(myReturns) - (optimal_embedding_dim - 1) * optimal_tau
     if num_points_for_embedding <= 0:
         print(f"Warning: Not enough data points ({len(myReturns)}) to form embedded vectors with tau={optimal_tau} and m={optimal_embedding_dim}.")

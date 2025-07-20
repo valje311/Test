@@ -479,6 +479,15 @@ class PlotCollectorGUI:
         )
         self.stop_button.pack(side=tk.LEFT, padx=(0, 10))
         
+        # Config rename button
+        self.rename_config_button = ModernButton(
+            control_frame,
+            text="🏷️ Config ID's Setzen",
+            command=self.start_config_rename,
+            style="secondary"
+        )
+        self.rename_config_button.pack(side=tk.LEFT, padx=(0, 10))
+        
         # Clear log button
         ModernButton(
             control_frame,
@@ -656,13 +665,14 @@ class PlotCollectorGUI:
         
         # Example filename components
         plot_name = "False_Nearest_Neighbors"
+        config_id = "047370"  # Example 6-digit config ID
         bins = "150x200"
         
-        # Build preview filename
+        # Build preview filename with new format: plotname_suffix_ID_XXXXXX_bins_info.png
         if suffix and not suffix.startswith('_'):
             suffix = '_' + suffix
         
-        preview_filename = f"{plot_name}{suffix}_bins_{bins}.png"
+        preview_filename = f"{plot_name}{suffix}_ID_{config_id}_bins_{bins}.png"
         
         # Update preview label
         self.preview_label.config(text=preview_filename)
@@ -776,6 +786,68 @@ class PlotCollectorGUI:
         
         self.log_message("🚀 Sammlung gestartet!", "success")
     
+    def start_config_rename(self):
+        """Start the config.ini renaming process."""
+        if not self.validate_paths():
+            return
+        
+        if self.is_collecting:
+            messagebox.showwarning("Warnung", "Es läuft bereits ein Prozess.")
+            return
+        
+        # Ask for confirmation
+        result = messagebox.askyesno(
+            "Config Umbenennung",
+            "Diese Funktion benennt alle config.ini Dateien in den Parameter-Ordnern um.\n\n"
+            "Format: config_ID_XXXX.ini\n\n"
+            "Möchten Sie fortfahren?"
+        )
+        
+        if not result:
+            return
+        
+        # Update UI state
+        self.is_collecting = True
+        self.start_button.config(state=tk.DISABLED)
+        self.rename_config_button.config(state=tk.DISABLED)
+        self.stop_button.config(state=tk.NORMAL)
+        self.open_target_button.config(state=tk.DISABLED)
+        
+        # Clear previous log
+        self.log_text.delete(1.0, tk.END)
+        
+        # Reset progress
+        self.progress_var.set(0)
+        self.progress_label.config(text="Config Umbenennung wird gestartet...")
+        self.status_label.config(text="Config Umbenennung läuft...")
+        
+        # Start renaming in separate thread
+        self.collection_thread = threading.Thread(target=self.run_config_rename, daemon=True)
+        self.collection_thread.start()
+        
+        self.log_message("🏷️ Config Umbenennung gestartet!", "success")
+    
+    def run_config_rename(self):
+        """Run the config renaming process in a separate thread."""
+        try:
+            source_path = self.get_source_path()
+            
+            # Create progress tracker
+            self.progress_tracker = ProgressTracker(self.gui_queue)
+            
+            # Create config renamer
+            renamer = GUIConfigRenamer(source_path, self.progress_tracker)
+            
+            # Run renaming
+            stats = renamer.rename_all_configs()
+            
+            # Report completion
+            self.progress_tracker.report_completion(stats)
+            
+        except Exception as e:
+            self.gui_queue.put(('error', f"Config Umbenennung fehlgeschlagen: {str(e)}"))
+            self.gui_queue.put(('collection_complete', False))
+    
     def run_collection(self):
         """Run the collection process in a separate thread."""
         try:
@@ -873,39 +945,61 @@ class PlotCollectorGUI:
         """Handle completion of the collection process."""
         self.is_collecting = False
         self.start_button.config(state=tk.NORMAL)
+        self.rename_config_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
         self.open_target_button.config(state=tk.NORMAL)
         
         # Update progress
         self.progress_var.set(100)
-        self.progress_label.config(text="Sammlung abgeschlossen!")
+        
+        # Check if this was a config rename operation
+        if 'configs_renamed' in stats:
+            self.progress_label.config(text="Config Umbenennung abgeschlossen!")
+            self.log_message("✅ Config Umbenennung erfolgreich abgeschlossen!", "success")
+            self.log_message(f"📊 Endstatistiken:", "info")
+            self.log_message(f"   📁 Ordner verarbeitet: {stats['folders_processed']}", "info")
+            self.log_message(f"   🏷️ Configs umbenannt: {stats['configs_renamed']}", "info")
+            self.log_message(f"   ⚠️ Fehler: {stats['errors']}", "info")
+            
+            # Show completion message
+            messagebox.showinfo(
+                "Config Umbenennung Abgeschlossen",
+                f"Config-Umbenennung erfolgreich abgeschlossen!\n\n"
+                f"📁 Ordner verarbeitet: {stats['folders_processed']}\n"
+                f"🏷️ Configs umbenannt: {stats['configs_renamed']}\n"
+                f"⚠️ Fehler: {stats['errors']}\n\n"
+                f"Verarbeitet in: {self.get_source_path()}"
+            )
+        else:
+            # Regular plot collection completion
+            self.progress_label.config(text="Sammlung abgeschlossen!")
+            self.log_message("✅ Sammlung erfolgreich abgeschlossen!", "success")
+            self.log_message(f"📊 Endstatistiken:", "info")
+            self.log_message(f"   📁 Ordner verarbeitet: {stats['folders_processed']}", "info")
+            self.log_message(f"   🖼️ Plots gesammelt: {stats['plots_collected']}", "info")
+            self.log_message(f"   ⚠️ Fehler: {stats['errors']}", "info")
+            
+            # Show completion message
+            messagebox.showinfo(
+                "Sammlung Abgeschlossen",
+                f"Plot-Sammlung erfolgreich abgeschlossen!\n\n"
+                f"📁 Ordner verarbeitet: {stats['folders_processed']}\n"
+                f"🖼️ Plots gesammelt: {stats['plots_collected']}\n"
+                f"⚠️ Fehler: {stats['errors']}\n\n"
+                f"Ergebnisse gespeichert in: {self.get_target_path()}"
+            )
+        
         self.status_label.config(text="Bereit")
-        
-        # Log completion
-        self.log_message("✅ Sammlung erfolgreich abgeschlossen!", "success")
-        self.log_message(f"📊 Endstatistiken:", "info")
-        self.log_message(f"   📁 Ordner verarbeitet: {stats['folders_processed']}", "info")
-        self.log_message(f"   🖼️ Plots gesammelt: {stats['plots_collected']}", "info")
-        self.log_message(f"   ⚠️ Fehler: {stats['errors']}", "info")
-        
-        # Show completion message
-        messagebox.showinfo(
-            "Sammlung Abgeschlossen",
-            f"Plot-Sammlung erfolgreich abgeschlossen!\n\n"
-            f"📁 Ordner verarbeitet: {stats['folders_processed']}\n"
-            f"🖼️ Plots gesammelt: {stats['plots_collected']}\n"
-            f"⚠️ Fehler: {stats['errors']}\n\n"
-            f"Ergebnisse gespeichert in: {self.get_target_path()}"
-        )
     
     def handle_collection_stopped(self):
         """Handle manual stop of collection."""
         self.is_collecting = False
         self.start_button.config(state=tk.NORMAL)
+        self.rename_config_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
         self.open_target_button.config(state=tk.NORMAL)
         
-        self.progress_label.config(text="Sammlung gestoppt")
+        self.progress_label.config(text="Prozess gestoppt")
         self.status_label.config(text="Bereit")
     
     def run(self):
@@ -927,25 +1021,40 @@ class GUIPlotCollector(PlotCollector):
         # Ensure suffix starts with underscore if not empty
         if self.suffix and not self.suffix.startswith('_'):
             self.suffix = '_' + self.suffix
+        
+        # Ensure paths are Path objects
+        self.source_dir = Path(source_dir)
+        self.target_dir = Path(target_dir)
+        
+        # Initialize stats if not done by parent
+        if not hasattr(self, 'stats'):
+            self.stats = {
+                'folders_processed': 0,
+                'plots_collected': 0,
+                'errors': 0
+            }
     
     def _collect_plot(self, plot_file: Path, bin_info: str) -> None:
-        """Collect a single plot file with custom suffix to the appropriate category folder."""
+        """Collect a single plot file with custom suffix and config ID to the appropriate category folder."""
         from pathlib import Path
         import shutil
-        from PlotCollector import get_plot_category
         
-        category = get_plot_category(plot_file.name)
+        # Get config ID from the folder
+        config_id = self._get_config_id_from_folder(plot_file.parent)
+        
+        # Use enhanced plot category function
+        category = self._get_enhanced_plot_category(plot_file.name)
         
         # Create category folder
         category_dir = self.target_dir / category
         category_dir.mkdir(exist_ok=True)
         
-        # Generate new filename with suffix
+        # Generate new filename with suffix and config ID
         file_stem = plot_file.stem
         file_ext = plot_file.suffix
         
-        # Insert suffix before bin_info
-        new_filename = f"{file_stem}{self.suffix}_{bin_info}{file_ext}"
+        # Format: plotname_suffix_ID_XXXXXX_bins_info.png
+        new_filename = f"{file_stem}{self.suffix}_ID_{config_id}_{bin_info}{file_ext}"
         
         # Target file path
         target_file = category_dir / new_filename
@@ -957,6 +1066,90 @@ class GUIPlotCollector(PlotCollector):
         # Copy the file
         shutil.copy2(plot_file, target_file)
         logging.debug(f"Copied: {plot_file} -> {target_file}")
+    
+    def _get_enhanced_plot_category(self, filename: str) -> str:
+        """Enhanced plot categorization including new plot types."""
+        filename_lower = filename.lower()
+        
+        # Joint Histogram plots (check first since they're very specific)
+        if 'joint_histogram' in filename_lower:
+            return 'Joint_Histograms'
+        
+        # Returns Analysis plots
+        elif 'returns_histogram' in filename_lower:
+            return 'Returns_Histograms'
+        elif 'returns_timeseries' in filename_lower:
+            return 'Returns_Timeseries'
+        elif 'returns_analysis' in filename_lower:
+            return 'Returns_Analysis'
+        
+        # Existing categories
+        elif 'false_nearest' in filename_lower or 'fnn' in filename_lower:
+            return 'False_Nearest_Neighbors'
+        elif 'mutual_information' in filename_lower or 'mi_' in filename_lower:
+            return 'Mutual_Information'
+        elif 'autocorrelation' in filename_lower or 'acf' in filename_lower:
+            return 'Autocorrelation'
+        elif 'phase_space' in filename_lower or 'embedding' in filename_lower:
+            return 'Phase_Space'
+        elif 'candlestick' in filename_lower or 'candle' in filename_lower:
+            return 'Candlestick_Charts'
+        elif 'perona_malik' in filename_lower or 'smoothing' in filename_lower:
+            return 'Smoothing'
+        else:
+            return 'Other_Plots'
+    
+    def _get_config_id_from_folder(self, folder_path: Path) -> str:
+        """Extract config ID from config file in the folder or generate one."""
+        # First, try to find a config file with ID
+        for config_file in folder_path.glob('config_ID_*.ini'):
+            # Extract ID from filename like config_ID_123456.ini
+            import re
+            match = re.search(r'config_ID_([A-Za-z0-9]{6})\.ini', config_file.name)
+            if match:
+                return match.group(1)
+        
+        # If no ID config found, try regular config.ini and generate ID
+        config_file = folder_path / 'config.ini'
+        if config_file.exists():
+            # Generate ID from folder name (same logic as in renamer)
+            folder_name = folder_path.name
+            import re
+            
+            # Look for sequential patterns first (for parameter sweeps)
+            sequential_patterns = [
+                r'run_(\d{6})',
+                r'config_(\d{6})', 
+                r'sweep_(\d{6})',
+                r'param_(\d{6})',
+                r'_(\d{6})_',
+                r'_(\d{6})$',
+                r'^(\d{6})_',
+                r'^(\d{6})$'
+            ]
+            
+            for pattern in sequential_patterns:
+                match = re.search(pattern, folder_name)
+                if match:
+                    return match.group(1)
+            
+            # Try timestamp extraction
+            timestamp_match = re.search(r'(\d{8}_\d{6})', folder_name)
+            if timestamp_match:
+                timestamp = timestamp_match.group(1)
+                return timestamp[-6:]
+            else:
+                import hashlib
+                hash_object = hashlib.md5(folder_name.encode())
+                # Convert to number and take modulo to get 6 digits
+                hex_hash = hash_object.hexdigest()
+                return str(int(hex_hash, 16) % 1000000).zfill(6)
+        
+        # Fallback: use folder name hash
+        import hashlib
+        hash_object = hashlib.md5(folder_path.name.encode())
+        hex_hash = hash_object.hexdigest()
+        return str(int(hex_hash, 16) % 1000000).zfill(6)
     
     def collect_all_plots(self) -> dict:
         """Collect plots with GUI progress reporting."""
@@ -976,6 +1169,200 @@ class GUIPlotCollector(PlotCollector):
                 
                 self.stats['folders_processed'] += 1
                 self.progress_tracker.update_progress(folder.name, plots_added)
+                
+            except Exception as e:
+                error_msg = f"Error processing folder {folder}: {e}"
+                self.progress_tracker.report_error(error_msg)
+                self.stats['errors'] += 1
+        
+        return self.stats
+    
+    def _find_sweep_folders(self):
+        """Find all parameter sweep folders containing plots."""
+        folders = []
+        try:
+            # Look for directories that contain plot files
+            for item in self.source_dir.iterdir():
+                if item.is_dir():
+                    # Check if this directory contains any plot files
+                    plot_files = list(item.glob("*.png")) + list(item.glob("*.jpg")) + list(item.glob("*.jpeg"))
+                    if plot_files:
+                        folders.append(item)
+                        
+            # Also check subdirectories recursively
+            for item in self.source_dir.rglob("*"):
+                if item.is_dir() and item not in folders:
+                    plot_files = list(item.glob("*.png")) + list(item.glob("*.jpg")) + list(item.glob("*.jpeg"))
+                    if plot_files:
+                        folders.append(item)
+                        
+        except Exception as e:
+            logging.error(f"Error finding sweep folders: {e}")
+        
+        return sorted(set(folders))  # Remove duplicates and sort
+    
+    def _process_folder(self, folder: Path):
+        """Process a single folder and collect plots."""
+        plot_files = list(folder.glob("*.png")) + list(folder.glob("*.jpg")) + list(folder.glob("*.jpeg"))
+        
+        for plot_file in plot_files:
+            try:
+                # Extract bin info from filename or use default
+                bin_info = self._extract_bin_info(plot_file.name)
+                self._collect_plot(plot_file, bin_info)
+                self.stats['plots_collected'] += 1
+                
+            except Exception as e:
+                logging.error(f"Error processing plot {plot_file}: {e}")
+                self.stats['errors'] += 1
+    
+    def _extract_bin_info(self, filename: str) -> str:
+        """Extract bin information from filename."""
+        import re
+        
+        # Look for patterns like "150-150", "150x200", "bins_150x200", etc.
+        patterns = [
+            r'(\d+x\d+)',          # 150x200
+            r'(\d+-\d+)',          # 150-150
+            r'bins[_-](\d+x\d+)',  # bins_150x200
+            r'bins[_-](\d+-\d+)',  # bins_150-150
+            r'dim(\d+)',           # dim15
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, filename)
+            if match:
+                return f"bins_{match.group(1)}"
+        
+        # Default if no pattern found
+        return "bins_none"
+
+
+# ==================================================================================
+# GUI-INTEGRATED CONFIG RENAMER
+# ==================================================================================
+
+class GUIConfigRenamer:
+    """Config.ini renamer with GUI progress reporting."""
+    
+    def __init__(self, source_dir: str, progress_tracker: ProgressTracker):
+        self.source_dir = Path(source_dir)
+        self.progress_tracker = progress_tracker
+        self.stats = {
+            'folders_processed': 0,
+            'configs_renamed': 0,
+            'errors': 0
+        }
+    
+    def _find_sweep_folders(self):
+        """Find all parameter sweep folders."""
+        folders = []
+        try:
+            for item in self.source_dir.iterdir():
+                if item.is_dir():
+                    # Look for config.ini files in subdirectories
+                    for config_file in item.rglob('config.ini'):
+                        if config_file.parent not in folders:
+                            folders.append(config_file.parent)
+        except Exception as e:
+            logging.error(f"Error finding sweep folders: {e}")
+        
+        return sorted(folders)
+    
+    def _generate_config_id(self, folder_path: Path) -> str:
+        """Generate a unique ID for the config file based on folder structure."""
+        # Use sequential number from folder name if available
+        folder_name = folder_path.name
+        
+        # Try to extract sequential number from folder name (e.g., "run_000001", "config_000001", etc.)
+        import re
+        
+        # Look for patterns like run_123456, config_123456, sweep_123456, etc.
+        sequential_patterns = [
+            r'run_(\d{6})',
+            r'config_(\d{6})', 
+            r'sweep_(\d{6})',
+            r'param_(\d{6})',
+            r'_(\d{6})_',
+            r'_(\d{6})$',
+            r'^(\d{6})_',
+            r'^(\d{6})$'
+        ]
+        
+        for pattern in sequential_patterns:
+            match = re.search(pattern, folder_name)
+            if match:
+                return match.group(1)  # Return the 6-digit number
+        
+        # Try to extract timestamp from folder name
+        timestamp_match = re.search(r'(\d{8}_\d{6})', folder_name)
+        if timestamp_match:
+            timestamp = timestamp_match.group(1)
+            # Extract last 6 digits as ID
+            config_id = timestamp[-6:]
+        else:
+            # Generate 6-digit ID from folder name hash
+            import hashlib
+            hash_object = hashlib.md5(folder_name.encode())
+            # Take first 6 characters and ensure they're digits
+            hex_hash = hash_object.hexdigest()
+            # Convert to number and take modulo to get 6 digits
+            config_id = str(int(hex_hash, 16) % 1000000).zfill(6)
+        
+        return config_id
+    
+    def _rename_config_file(self, config_file: Path) -> bool:
+        """Rename a single config.ini file with ID."""
+        try:
+            folder_path = config_file.parent
+            config_id = self._generate_config_id(folder_path)
+            
+            # New filename
+            new_filename = f"config_ID_{config_id}.ini"
+            new_path = folder_path / new_filename
+            
+            # Check if already renamed
+            if config_file.name.startswith('config_ID_'):
+                logging.info(f"Config already renamed: {config_file}")
+                return False
+            
+            # Check if target exists
+            if new_path.exists():
+                logging.warning(f"Target config file already exists: {new_path}")
+                return False
+            
+            # Rename the file
+            config_file.rename(new_path)
+            logging.info(f"Renamed: {config_file.name} -> {new_filename}")
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error renaming config file {config_file}: {e}")
+            return False
+    
+    def rename_all_configs(self) -> dict:
+        """Rename all config.ini files with GUI progress reporting."""
+        # Find all folders with config.ini
+        config_folders = self._find_sweep_folders()
+        self.progress_tracker.set_total_folders(len(config_folders))
+        
+        if not config_folders:
+            logging.warning("No config.ini files found in subdirectories")
+            return self.stats
+        
+        # Process each folder
+        for folder in config_folders:
+            try:
+                config_file = folder / 'config.ini'
+                
+                if config_file.exists():
+                    renamed = self._rename_config_file(config_file)
+                    if renamed:
+                        self.stats['configs_renamed'] += 1
+                
+                self.stats['folders_processed'] += 1
+                self.progress_tracker.update_progress(folder.name, self.stats['configs_renamed'])
                 
             except Exception as e:
                 error_msg = f"Error processing folder {folder}: {e}"

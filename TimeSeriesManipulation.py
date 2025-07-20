@@ -61,7 +61,7 @@ def getSimpleReturns(dx):
 
 import numpy as np
 
-def perona_malik_smoothing(time, data, config):
+def perona_malik_smoothing(time, data, config, plots_dir=None):
     """
     Applies Perona-Malik diffusion to smooth 1D data while preserving edges.
     
@@ -112,10 +112,11 @@ def perona_malik_smoothing(time, data, config):
     plt.grid(True)
     plt.legend()
 
-    # Get and print the absolute paths
-    project_root = os.path.dirname(os.path.abspath(__file__))
-    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
-    os.makedirs(plots_dir, exist_ok=True)
+    # Use provided plots_dir or create default one
+    if plots_dir is None:
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
+        os.makedirs(plots_dir, exist_ok=True)
     plt.savefig(os.path.join(plots_dir, 'Perona_Malik_smoothing.png'))
     plt.close()
     return smoothed    

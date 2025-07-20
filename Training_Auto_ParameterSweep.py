@@ -13,7 +13,7 @@ import TimeSeriesManipulation
 
 # Parameter sweep configuration
 PARAMETER_SWEEP = True  # Set to False for single run
-NUM_BINS_VALUES = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000]  # Different bin values to test
+NUM_BINS_VALUES = [100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 425, 450, 475, 500]  # Different bin values to test
 SWEEP_MODE = "all_combinations"  # Options: "diagonal", "all_combinations"
 
 def xor(a: bool, b: bool) -> bool:
