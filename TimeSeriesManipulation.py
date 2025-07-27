@@ -3,6 +3,27 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
+import configparser
+from tqdm import tqdm
+import pandas as pd
+
+def getVolumeWeightedAveragePrice(df: pd.DataFrame, config: configparser.ConfigParser):
+    """
+    Calculate the Volume Weighted Average Price (VWAP) for a DataFrame.
+    
+    Args:
+        df: DataFrame containing 'Price' and 'Volume' columns.
+        config: ConfigParser object with database settings.
+    
+    Returns:
+        DataFrame with an additional 'VWAP' column.
+    """
+    if config['SQL']['DataColName'] not in df.columns or config['SQL']['VolumeColName'] not in df.columns:
+        raise ValueError("DataFrame must contain '{config['SQL']['DataColName']}' and '{config['SQL']['VolumeColName']}' columns.")
+    
+    vwap = (df[config['SQL']['DataColName']] * df[config['SQL']['VolumeColName']]).cumsum() / df[config['SQL']['VolumeColName']].cumsum()
+    df['VWAP'] = vwap
+    return df
 
 def getLogReturns(dx):
     """
@@ -59,63 +80,40 @@ def getSimpleReturns(dx):
     
     return simple_returns.tolist()
 
-import numpy as np
-
-def perona_malik_smoothing(time, data, config):
+def perona_malik_smoothing(time: np.array, data: np.array, config: configparser.ConfigParser):
     """
     Applies Perona-Malik diffusion to smooth 1D data while preserving edges.
-    
-    Args:
-        time: Time array corresponding to the data
-        data: Input 1D numpy array
-        Iterations: Number of iterations for the diffusion process
-        TimeStep: Time step size (should be < 0.25 for stability)
-        Kappa: Diffusion constant, controls the sensitivity to edges
-        
-    Returns:
-        Smoothed data array
     """
-    from tqdm import tqdm
-
-    # Convert input to numpy array if needed
-    data = np.array(data, dtype=float)
     smoothed = data.copy()
-    
-    # Pad array to handle boundaries
     padded = np.pad(smoothed, (1, 1), 'edge')
+    assert int(config['Perona-Malik']['Iterations']) > 0, "Iterations must be a positive integer"
+    assert float(config['Perona-Malik']['TimeStep']) > 0, "Time step must be a positive float"
+    assert float(config['Perona-Malik']['Kappa']) > 0, "Kappa must be a positive float"
+    assert float(config['Perona-Malik']['TimeStep']) < 0.25, "Time step must be less than 0.25 for stability"
+
     iterations = int(config['Perona-Malik']['Iterations'])
     with tqdm(total=iterations, desc='Perona-Malik Smoothing Progress') as pbar:
         for _ in range(iterations):
-            # Calculate gradients
-            diff_left = padded[1:-1] - padded[:-2]  # backward difference
-            diff_right = padded[2:] - padded[1:-1]  # forward difference
-            
-            # Calculate diffusion coefficients
-            c_left = np.exp(-(diff_left/float(config['Perona-Malik']['Kappa']))**2)
-            c_right = np.exp(-(diff_right/float(config['Perona-Malik']['Kappa']))**2)
-            
-            # Update the signal
+            diff_left = padded[1:-1] - padded[:-2]
+            diff_right = padded[2:] - padded[1:-1]
+            c_left = np.exp(-(diff_left / float(config['Perona-Malik']['Kappa'])) ** 2)
+            c_right = np.exp(-(diff_right / float(config['Perona-Malik']['Kappa'])) ** 2)
             smoothed += float(config['Perona-Malik']['TimeStep']) * (c_right * diff_right - c_left * diff_left)
-            
-            # Update padded array for next iteration
             padded[1:-1] = smoothed
-            
-            # Update progress bar
             pbar.update(1)
-    
-    plt.figure(figsize=(10, 6))
-    plt.plot(time, data, 'b-', label=config['SQL']['DataColName'], alpha=0.8)
-    plt.plot(time, smoothed, 'r-', label='Smoothed ' + config['SQL']['DataColName'], alpha=0.8)
-    plt.title(config['SQL']['DataColName'] + ' Chart')
-    plt.xlabel('Time')
-    plt.ylabel(config['SQL']['DataColName'])
-    plt.grid(True)
-    plt.legend()
 
-    # Get and print the absolute paths
+    candle_col = config['DEFAULT']['DataColName']
     project_root = os.path.dirname(os.path.abspath(__file__))
     plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
     os.makedirs(plots_dir, exist_ok=True)
+    plt.figure(figsize=(10, 6))
+    plt.plot(time, data, 'b-', label=candle_col, alpha=0.8)
+    plt.plot(time, smoothed, 'r-', label='Smoothed ' + candle_col, alpha=0.8)
+    plt.title(candle_col + ' Chart')
+    plt.xlabel('Time')
+    plt.ylabel(candle_col)
+    plt.grid(True)
+    plt.legend()
     plt.savefig(os.path.join(plots_dir, 'Perona_Malik_smoothing.png'))
     plt.close()
-    return smoothed    
+    return smoothed

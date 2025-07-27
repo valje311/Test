@@ -10,6 +10,7 @@ import os
 import FeatureSpace
 import TimeSeriesAnalysis
 import TimeSeriesManipulation
+import LSTM
 
 config = configparser.ConfigParser()
 config.read('MyConfig.ini')
@@ -40,11 +41,11 @@ def load_tick_data(start_date: datetime, end_date: datetime, config: configparse
         pandas DataFrame with tick data
     """
     # Create database connection
-    CONNECTION_STRING = f"mysql+mysqlconnector://{config['SQL']['Username']}:{config['SQL']['Password']}@localhost:{config['SQL']['Port']}/{config['SQL']['Database']}"
+    CONNECTION_STRING = f"mysql+mysqlconnector://{config['SQL']['UserName']}:{config['SQL']['Password']}@localhost:{config['SQL']['Port']}/{config['SQL']['Database']}"
     engine = create_engine(CONNECTION_STRING)
     
     # Prepare query
-    features = [config['SQL']['timeColName'], 'Close', 'Volume']
+    features = [config['SQL']['TimeColName'], 'Close', 'Volume']
     columns = ", ".join(features)
     query = text(f"""
         SELECT {columns}
@@ -76,7 +77,7 @@ def get_data_boundaries(config: configparser.ConfigParser) -> Tuple[pd.DataFrame
     Returns:
         Tuple of (first_entry, last_entry) as pandas DataFrames
     """
-    CONNECTION_STRING = f"mysql+mysqlconnector://{config['SQL']['Username']}:{config['SQL']['Password']}@localhost:{config['SQL']['Port']}/{config['SQL']['Database']}"
+    CONNECTION_STRING = f"mysql+mysqlconnector://{config['SQL']['UserName']}:{config['SQL']['Password']}@localhost:{config['SQL']['Port']}/{config['SQL']['Database']}"
     engine = create_engine(CONNECTION_STRING)
     
     features = [config['SQL']['TimeColName'], config['SQL']['DataColName'], 'Volume']
@@ -142,7 +143,7 @@ elif config['DEFAULT']['UseSimpleReturns'] == 'True':
             myReturns = TimeSeriesManipulation.perona_malik_smoothing(candles[config['SQL']['TimeColName']], myReturns, config)
 
 calculate_autocorr = TimeSeriesAnalysis.calculate_autocorrelation(myReturns, config)
-TimeSeriesAnalysis.TakenEmbedding(myReturns, plots_dir, config)
+tau = TimeSeriesAnalysis.TakenEmbedding(myReturns, plots_dir, config)
 
 plt.figure()
 plt.xlabel('Time')
@@ -152,9 +153,9 @@ plt.plot(candles[config['SQL']['TimeColName']][1:], myReturns, label='Log Return
 plt.plot(candles[config['SQL']['TimeColName']][1:-int(config['Autocorrelation']['Lag'])], myReturns[int(config['Autocorrelation']['Lag']):], label='Log Returns with lag', color='orange')
 
 plt.savefig(os.path.join(plots_dir, 'LogReturns.png'))
-
-
 plt.close()
+
+LSTM.trainLSTM(tau, config)
 
 #differences = TimeSeriesManipulation.getDifferences(df['Volume'].tolist())
 #bollinger_bands_middle, bollinger_bands_high, bollinger_bands_low = TimeSeriesAnalysis.calculate_bollinger_bands(df['Close'], window=20, num_std=2)

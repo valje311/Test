@@ -162,7 +162,6 @@ def find_optimal_time_delay(data: Union[pd.Series, List[float], np.ndarray], con
     print(f"Optimal time delay (tau) found using Mutual Information: {optimal_tau}")
     return optimal_tau
 
-
 def calculate_false_nearest_neighbors(data: np.ndarray, tau: int, config: configparser.ConfigParser) -> Tuple[np.ndarray, int]:
     """
     Calculates the percentage of false nearest neighbors (FNN) for various embedding dimensions.
@@ -307,7 +306,6 @@ def granger_causality_test(data: pd.DataFrame, max_lag: int = 5, verbose: bool =
                 for lag, res in result.items():
                     print(f"Lag {lag}: F-statistic = {res[0]['ssr_ftest'][0]}, p-value = {res[0]['ssr_ftest'][1]}")
 
-
 def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], config) -> np.ndarray:
     """
     Calculate and optionally plot the autocorrelation function for a time series.
@@ -355,7 +353,7 @@ def calculate_autocorrelation(data: Union[pd.Series, List[float], np.ndarray], c
     plt.title('Autocorrelation Function')
     
     project_root = os.path.dirname(os.path.abspath(__file__))
-    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['tableName'])
+    plots_dir = os.path.join(project_root, 'Plots', config['SQL']['TableName'])
     os.makedirs(plots_dir, exist_ok=True)
     plt.savefig(os.path.join(plots_dir, 'Autocorrelation.png'))
     plt.close()
@@ -452,3 +450,4 @@ def TakenEmbedding(myReturns: Union[pd.Series, List[float], np.ndarray], plots_d
             plt.savefig(os.path.join(plots_dir, 'Phase_Space_3D_Reconstruction.png'))
             plt.close()
             print(f"Saved 3D phase space reconstruction plot to {os.path.join(plots_dir, 'Phase_Space_3D_Reconstruction.png')}")
+    return optimal_tau
